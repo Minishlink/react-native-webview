@@ -70,6 +70,7 @@ import com.facebook.react.uimanager.events.ContentSizeChangeEvent;
 import com.facebook.react.uimanager.events.Event;
 import com.facebook.react.uimanager.events.EventDispatcher;
 import com.reactnativecommunity.webview.RNCWebViewModule.ShouldOverrideUrlLoadingLock.ShouldOverrideCallbackState;
+import com.reactnativecommunity.webview.events.TopCanGoBackForwardChangedEvent;
 import com.reactnativecommunity.webview.events.TopLoadingErrorEvent;
 import com.reactnativecommunity.webview.events.TopHttpErrorEvent;
 import com.reactnativecommunity.webview.events.TopLoadingFinishEvent;
@@ -107,6 +108,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * - topLoadingStart
  * - topLoadingProgress
  * - topShouldStartLoadWithRequest
+ * - topCanGoBackForwardChanged
  * <p>
  * Each event will carry the following properties:
  * - target - view's react tag
@@ -602,6 +604,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     }
     export.put(TopLoadingProgressEvent.EVENT_NAME, MapBuilder.of("registrationName", "onLoadingProgress"));
     export.put(TopShouldStartLoadWithRequestEvent.EVENT_NAME, MapBuilder.of("registrationName", "onShouldStartLoadWithRequest"));
+    export.put(TopCanGoBackForwardChangedEvent.EVENT_NAME, MapBuilder.of("registrationName", "onCanGoBackForwardChanged"));
     export.put(ScrollEventType.getJSEventName(ScrollEventType.SCROLL), MapBuilder.of("registrationName", "onScroll"));
     export.put(TopHttpErrorEvent.EVENT_NAME, MapBuilder.of("registrationName", "onHttpError"));
     export.put(TopRenderProcessGoneEvent.EVENT_NAME, MapBuilder.of("registrationName", "onRenderProcessGone"));
@@ -801,6 +804,8 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
   protected static class RNCWebViewClient extends WebViewClient {
 
     protected boolean mLastLoadFailed = false;
+    protected boolean mLastCanGoBack = false;
+    protected boolean mLastCanGoForward = false;
     protected @Nullable
     ReadableArray mUrlPrefixesForDefaultIntent;
     protected RNCWebView.ProgressChangedFilter progressChangedFilter = null;
@@ -824,6 +829,28 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     }
 
     @Override
+    public void doUpdateVisitedHistory(WebView webView, String url, boolean isReload) {
+      super.doUpdateVisitedHistory(webView, url, isReload);
+      boolean canGoBack = webView.canGoBack();
+      boolean canGoForward = webView.canGoForward();
+
+      if(canGoBack != mLastCanGoBack || canGoForward != mLastCanGoForward)
+      {
+        WritableMap eventData = createWebViewEvent(webView, url);
+        eventData.putString("navigationType", "other");
+
+        dispatchEvent( webView,
+          new TopCanGoBackForwardChangedEvent(
+          webView.getId(),
+          eventData)
+        );
+      }
+
+      mLastCanGoBack = canGoBack;
+      mLastCanGoForward = canGoForward;
+    }
+
+    @Override
     public void onPageStarted(WebView webView, String url, Bitmap favicon) {
       super.onPageStarted(webView, url, favicon);
       mLastLoadFailed = false;
@@ -840,15 +867,24 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
 
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, String url) {
+      return shouldOverrideUrlLoading(view, url, null);
+    }
+
+    public boolean shouldOverrideUrlLoading(WebView view, String url, @Nullable WebResourceRequest request) {
       final RNCWebView rncWebView = (RNCWebView) view;
       final boolean isJsDebugging = ((ReactContext) view.getContext()).getJavaScriptContextHolder().get() == 0;
+
+      final WritableMap event = createWebViewEvent(view, url);
+      if (request != null) {
+        event.putBoolean("hasGesture", request.hasGesture());
+        event.putBoolean("isTopFrame", request.isForMainFrame());
+      }
 
       if (!isJsDebugging && rncWebView.mCatalystInstance != null) {
         final Pair<Integer, AtomicReference<ShouldOverrideCallbackState>> lock = RNCWebViewModule.shouldOverrideUrlLoadingLock.getNewLock();
         final int lockIdentifier = lock.first;
         final AtomicReference<ShouldOverrideCallbackState> lockObject = lock.second;
 
-        final WritableMap event = createWebViewEvent(view, url);
         event.putInt("lockIdentifier", lockIdentifier);
         rncWebView.sendDirectMessage("onShouldStartLoadWithRequest", event);
 
@@ -882,7 +918,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
           view,
           new TopShouldStartLoadWithRequestEvent(
             view.getId(),
-            createWebViewEvent(view, url)));
+            event));
         return true;
       }
     }
@@ -891,7 +927,7 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
       final String url = request.getUrl().toString();
-      return this.shouldOverrideUrlLoading(view, url);
+      return this.shouldOverrideUrlLoading(view, url, request);
     }
 
     @Override

@@ -263,6 +263,10 @@ class WebView extends React.Component<AndroidWebViewProps, State> {
     }
   };
 
+  onCanGoBackForwardChanged = (event: WebViewNavigationEvent) => {
+    this.updateNavigationState(event);
+  };
+
   onLoadingProgress = (event: WebViewProgressEvent) => {
     const { onLoadProgress } = this.props;
     const { nativeEvent: { progress } } = event;
@@ -363,6 +367,7 @@ class WebView extends React.Component<AndroidWebViewProps, State> {
         onHttpError={this.onHttpError}
         onRenderProcessGone={this.onRenderProcessGone}
         onMessage={this.onMessage}
+        onCanGoBackForwardChanged={this.onCanGoBackForwardChanged}
         onShouldStartLoadWithRequest={this.onShouldStartLoadWithRequest}
         ref={this.webViewRef}
         // TODO: find a better way to type this.
