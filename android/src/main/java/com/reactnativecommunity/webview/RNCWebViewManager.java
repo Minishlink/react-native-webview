@@ -839,7 +839,8 @@ public class RNCWebViewManager extends SimpleViewManager<WebView> {
         WritableMap eventData = createWebViewEvent(webView, url);
         eventData.putString("navigationType", "other");
 
-        dispatchEvent( webView,
+        ((RNCWebView) webView).dispatchEvent(
+          webView,
           new TopCanGoBackForwardChangedEvent(
           webView.getId(),
           eventData)
